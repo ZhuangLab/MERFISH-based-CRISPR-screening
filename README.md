@@ -3,11 +3,12 @@
 This project contains code for image and sequence analysis for pooled CRISPR screening using MERFISH for genotype identification in individual cells as described in Imaging-based pooled CRISPR screening reveals regulators of lncRNA localization.
 
 Please check github.com/ZhuangLab for the latest version of this code.
-All function libraries can be found in github.com/ZhuangLab
+
+All function used in the scripts can be found in github.com/ZhuangLab/MERFISH_analysis and github.com/ZhuangLab/storm-analysis
 
 -----Matlab image analysis-----
 
-This analysis software is used for identifying segmenting images into cells, extracting barcodes from each cell, and analyzing cell phenotypes. This analysis software is written in matlabs, where the path is 
+This analysis software is used for identifying FISH spots of reporter mRNA, identify the colocalization of trit signals and reporter mRNA. segmenting images into cells, extracting barcodes from each cell, and analyzing cell phenotypes. This analysis software is written in matlabs.
 
 ------Matlab sequence analysis------
 

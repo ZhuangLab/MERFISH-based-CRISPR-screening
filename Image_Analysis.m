@@ -12,7 +12,7 @@ RawPath = '';
 barcodePath=SetFigureSavePath([dataPath,'\barcode\'], ...
      'makeDir', true);
 % Useful data structure for spotfinding
-[~,~,all]=xlsread([RawPath 'Arrangement.xlsx']);
+[~,~,all]=xlsread([RawPath 'Arrangement.xlsx']); % Specify the imaging rounds and frame of the trit signal. See example files
 Gene=all(2:end,1);
 color=all(2:end,2);
 desiredframe=all(2:end,4);
@@ -23,7 +23,7 @@ colocalizationthreshold=3; %unit: pixel
 bitnumber=36;
 roundnumber=18;
 testnum=200;
-mapPath=SetFigureSavePath([analysisSavePath,'\map_info_with_MALAT1_2\'], ...
+mapPath=SetFigureSavePath([analysisSavePath,'\map_info\'], ...
      'makeDir', true);
 decodePath=SetFigureSavePath([analysisSavePath,'\decode_info\'], ...
      'makeDir', true);
@@ -55,7 +55,7 @@ if ~isempty(mfilename) % Only log if running as a script
 end
 %% Correct the illumination of 647 and 750
     Path=[RawPath 'data\'];
-    file=['Epi-750s1-650s1-560s1-488s2-405s1_(?<fov>[0-9]+)_00'];    
+    file=['Epi-750s1-650s1-560s1-488s2-405s1_(?<fov>[0-9]+)_00'];    % file name of the images
     tempFiles = BuildFileStructure(Path, ...
     'fileExt', 'dax', ...
     'regExp', file, ...
@@ -89,12 +89,11 @@ end
 %% Create parallel pool
 if isempty(gcp('nocreate'))
     p = parpool(15); % Set this number to control the number of parallel workers.
-                     % Polite usage would suggest these maximum values: morgan = 20, cajal = 10
 else
     p = gcp;
 end
 
-%% spotfinding
+%% spotfinding of reporter genes
 for i=1:length(Gene)
     analysisPath=[dataPath,'\',Gene{i},'\'];
      if ~exist(analysisPath)
@@ -134,7 +133,7 @@ for i=1:length(Gene)
               temp=int16(double(temp)./ratio750);
             else
               temp=int16(double(temp)./ratio647);
-            end
+            end % even the illumination before spot finding
             frameName=['Bit_c1_' num2str(f,'%02d')];
             infPath_FISH = ReadInfoFile(tempinfos(f).filePath);
             infPath_FISH.number_of_frames = 1;
@@ -158,7 +157,7 @@ end
 %% ------------------------------------------------------------------------
 % Map image files for ease of loading
 %%-------------------------------------------------------------------------
-%% smFISH binary files
+%% save all smFISH binary files into mlistfiles
 mlistfile={};
 for i=1:length(Gene)
     file=['Bit_c1_(?<fov>[0-9]+)_',num2str(color{i}),'_',num2str(threshold{i,1}),'_mlist'];
@@ -175,7 +174,7 @@ mlistfile=mlistfile(1:bitnumber);
 %%-------------------------------------------------------------------------
 %% decode the 561 spot in every FOV
 
-map=[1,1,0,0,2,2,3,3,4,4,9,9,5,5,6,6,7,7,8,8,10,10,11,11,12,12,13,13,14,14,15,15,16,16,17,17];
+map=[1,1,0,0,2,2,3,3,4,4,9,9,5,5,6,6,7,7,8,8,10,10,11,11,12,12,13,13,14,14,15,15,16,16,17,17]; % rounds number for each trit value
 parfor fovID =1:length(mlistfile{1})-1
         %% count and plot the colocalization and record nearest distance from colocalization 
         %if exist(strcat(decodePath,['FOV_' num2str(fovID),'_decode.mat']),'file')==0
@@ -201,11 +200,12 @@ parfor fovID =1:length(mlistfile{1})-1
             spotC561original{i}=spotC561{i};             
         end   
         count=0;
-        while isempty(spotC561{1}) & count<100
+        while isempty(spotC561{1}) & count<100 % warp the smFISH of all the round into the first round of smFISH 
+                                               % if the first round of smFISH has not enough spots then change to a random round
                 spotC561{1}=spotC561{randi(roundnumber)};
                 count=count+1;
         end
-            %%  shift rounds
+            %%  shift rounds for registration
         decode=zeros(bitnumber,length(spotC561{1}),'int16');
         if count<100
             display(['FOV ',num2str(fovID),'Start shifting']);
@@ -238,7 +238,7 @@ parfor fovID =1:length(mlistfile{1})-1
                     shift(2,rounds)=mean(spotC561{rounds}(:,2)-spotC561original{rounds}(:,2));
                 end
             end
-            %% get rid of overlapping 561 spots
+            %% get rid of overlapping 561 spots, overlapping threshold: 5 pixels
            
             display(['FOV ',num2str(fovID),'Start removing the spots']);
             dist=pdist2(spotC561{1},spotC561{1});           
@@ -250,7 +250,7 @@ parfor fovID =1:length(mlistfile{1})-1
                 end
             end
           
-            %%  decode the smFISH spots    
+            %%  map value signals to the individual smFISH spots    
             display('Start decoding');
             for j=1:bitnumber     
                 if ~isempty(spotC{j})
@@ -271,76 +271,11 @@ parfor fovID =1:length(mlistfile{1})-1
         parsavedecode(strcat(decodePath,['FOV_' num2str(fovID),'_decode.mat']),decode,SpotCoordinates,shift);
         %end
 end
-%% Correct the illumination
-    Path=[RawPath 'data\'];
-    file=['Epi-750s1-650s1-560s1-488s2-405s1_(?<fov>[0-9]+)_00'];    
-    tempFiles = BuildFileStructure(Path, ...
-    'fileExt', 'dax', ...
-    'regExp', file, ...
-    'fieldNames', {'fov','round'}, ...
-    'fieldConv', {@str2num});
-
-    display(['Found ' num2str(length(tempFiles)) ' dax files']);
-
-    % Run analysis of all fov
-    tempsum=zeros(2048,2048);
-    for f=1:length(tempFiles)
-        data=ReadDax(tempFiles(f).filePath,'startFrame', 6, 'endFrame', 6); 
-        tempsum=tempsum+double(data);
-    end
-    a=tempsum/length(tempFiles);
-    amax=max(max(a));
-    nucleusratio=a/amax;
-    
-    Path=[RawPath 'data\'];
-    file=['Epi-750s1-650s1-560s1-488s2-405s1_(?<fov>[0-9]+)_08'];    
-    tempFiles = BuildFileStructure(Path, ...
-    'fileExt', 'dax', ...
-    'regExp', file, ...
-    'fieldNames', {'fov','round'}, ...
-    'fieldConv', {@str2num});
-
-    display(['Found ' num2str(length(tempFiles)) ' dax files']);
-
-    % Run analysis of all fov
-    tempsum=zeros(2048,2048);
-    for f=1:length(tempFiles)
-        data=ReadDax(tempFiles(f).filePath,'startFrame', 6, 'endFrame', 6); 
-        tempsum=tempsum+double(data);
-    end
-    b=tempsum/length(tempFiles);
-    %b=a-b;
-    bmax=max(max(b));
-    SONratio=b/bmax;
-
-    Path=[RawPath 'data\'];
-    file=['Epi-750s1-650s1-560s1-488s2-405s1_(?<fov>[0-9]+)_07'];    
-    tempFiles = BuildFileStructure(Path, ...
-    'fileExt', 'dax', ...
-    'regExp', file, ...
-    'fieldNames', {'fov','round'}, ...
-    'fieldConv', {@str2num});
-
-    display(['Found ' num2str(length(tempFiles)) ' dax files']);
-
-    % Run analysis of all fov
-    tempsum=zeros(2048,2048);
-    for f=1:length(tempFiles)
-        data=ReadDax(tempFiles(f).filePath,'startFrame', 5, 'endFrame', 5); 
-        tempsum=tempsum+double(data);
-    end
-    c=tempsum/length(tempFiles);
-    cmax=max(max(c));
-    cytoratio=c/cmax;
-    
-save(([barcodePath 'illumination.mat']),'nucleusratio','cytoratio','SONratio'); 
-%% Try to segment cells on each FOV
+%% segment cells on each FOV
 nucleusbwThresh1=0.6;
 nucleusbwThresh2=0.4;
 cytoplasmbwThresh=0.07;
-mapPath=SetFigureSavePath([analysisSavePath,'\map_info_optimized\'], ...
-     'makeDir', true);
-parameterPath=[RawPath 'parameter1.xlsx'];
+parameterPath=[RawPath 'parameter1.xlsx']; % parameter for quantify the phenotype, See example files
 [~,~,all]=xlsread(parameterPath);
 parameter=all(2:end,2:end); 
 for fovID =1:length(mlistfile{1})-2
@@ -477,11 +412,7 @@ for fovID =1:length(mlistfile{1})-2
             boundaryPosi = boundaryPosi{1};
             cellBoundaryStruct(end).nucleusBoundary =boundaryPosi;
         end
-%         figure;
-%         scatter(nucleusyCentroids,nucleusxCentroids);
-%         for i=1:length(nucleusxCentroids)
-%             text(nucleusyCentroids(i),nucleusxCentroids(i),num2str(i));
-%         end
+
 %% load 561 spots and decode information
         disp('load spots and decode information');        
         temp=load(strcat(decodePath,['FOV_' num2str(fovID+1),'_decode.mat']));
@@ -496,7 +427,7 @@ for fovID =1:length(mlistfile{1})-2
             y=temp(:,2);
             mask=poly2mask(cellBoundaryStruct(i).nucleusBoundary(:,2),cellBoundaryStruct(i).nucleusBoundary(:,1),2048,2048);
             b=sum(x==1)+sum(x==2048)+sum(y==1)+sum(y==2048);
-            if b>20 && sum(mask(:))>1000 && sum(mask(:))<60000 
+            if b>20 && sum(mask(:))>1000 && sum(mask(:))<60000 % discard the cell if the cell is in contact with the FOV edge or the cell nucleus is too small
                 ValidCell(i)=0;
             end
        end  
@@ -570,55 +501,7 @@ for fovID =1:length(mlistfile{1})-2
      %end
 end 
 %close all;
-%% for quantify the phenotype only:
-mapPath=SetFigureSavePath([analysisSavePath,'\map_info_test\'], ...
-     'makeDir', true);
-parameterPath=[RawPath 'parameter1.xlsx'];
-[~,~,all]=xlsread(parameterPath);
-parameter=all(2:end,2:end); 
-for fovID =212%:length(mlistfile{1})-2
-     disp('Start quantifying phenotype');
-     temp=load(['\\neptune\analysis\lncRNA\analysis\PS166_U2OS_7_broad\FOV\map_info_optimized\FOV_' num2str(fovID),'data.mat']);
-     ratio=temp.ratio;
-     spotnum=temp.spotnum;
-     cellBoundaryStruct=temp.cellBoundaryStruct;
-     ValidCell=temp.ValidCell;
-     temp=load(strcat(decodePath,['FOV_' num2str(fovID+1),'_decode.mat']));
-     shift=temp.shift;
-        Cellfeature = {};
-        for i=1:9
-            if i==9
-                phenotype=ReadDax([RawPath,'data\Epi-750s1-650s1-560s1-488s2-405s1_',num2str(fovID,'%03d'),'_' num2str(i-1,'%02d'),'.dax'], 'startFrame', 6, 'endFrame', 6);
-                SPoriginal=int64(double(phenotype)./SONratio);   
-            else    
-              phenotype=ReadDax([RawPath,'data\Epi-750s1-650s1-560s1-488s2-405s1_',num2str(fovID,'%03d'),'_' num2str(i-1,'%02d'),'.dax'], 'startFrame', 5, 'endFrame', 5); % load phenotype
-              SPoriginal=int64(double(phenotype)./cytoratio);   
-            end
-            
-            %SPoriginal=phenotype;
-            figure;
-            imshow(int16(double(phenotype)./cytoratio));
-            if i==7 | i==9
-            [feature,result]=SpeckleFinder(RawPath,i,fovID,cytoratio,shift,SPoriginal,cellBoundaryStruct,parameter{i,1},parameter{i,2},parameter{i,3},parameter{i,4},parameter{i,5},parameter{i,6},1);            
-            else 
-             [feature,result]=SpeckleFinder(RawPath,i,fovID,cytoratio,shift,SPoriginal,cellBoundaryStruct,parameter{i,1},parameter{i,2},parameter{i,3},parameter{i,4},parameter{i,5},parameter{i,6},0);
-            end
-            figure; 
-            imshow(result);
-            Cellfeature{i}=feature;
-        end
-       parsave_SP(strcat(mapPath,['FOV_' num2str(fovID),'data.mat']),ratio,spotnum,cellBoundaryStruct,ValidCell,Cellfeature);
-%        boundary=cellBoundaryStruct; 
-%        sample=zeros(2048,2048);
-%         for j=1:length(boundary)
-%             mask=poly2mask(boundary(j).nucleusBoundary(:,2),boundary(j).nucleusBoundary(:,1),2048,2048);
-%             sample=sample+mask.*feature(j,6);
-%         end
-%         sample=sample./max(sample(:));
-%         imagesc(sample,[0,1]);
-%     %colorbar;
-%     colorbar('southoutside');
-end
+
 
 %% load data
 f1=[];
@@ -658,23 +541,6 @@ for fovID=1:length(mlistfile{1})-1
     end
 end
 
-% allfeature=[f1;f2;f3;f4;f5;f6;f7;f8;f9;f10;f11]';
-% variance=std(allfeature);
-% allfeature=(allfeature-mean(allfeature))./variance;
-% [coeff,score,latent,tsquared,explained]=pca(allfeature)
-% figure;
-% scatter3(score(:,1),score(:,2),score(:,3),'b.')
-% axis equal
-% xlabel('1st Principal Component')
-% ylabel('2nd Principal Component')
-% zlabel('3rd Principal Component')
-% % for i=1:length(score(:,1))
-% %  text(score(i,1),score(i,2),score(i,3),num2str(i));
-% % end
-% s1=score(:,1);
-% s2=score(:,2);
-% s3=score(:,3);
-% s4=score(:,4);
 Threshold=[0.1,0.1,0.1,0.1, 0.1,0.1,0.1,0.1,0.1, 0.1,0.1];
 disp(['Have found ' num2str(length(ratio)) ' cells']);
 % decode cells bit by bit
@@ -683,10 +549,6 @@ barcodePath=SetFigureSavePath([dataPath,'\barcode\'], ...
 cut=0.04;
 %crop the cells
 for i=1:12
-%     cut=0.1
-%     if i==7 
-%         cut=0.01;
-%     end
     bits=ratio(i*3-2:i*3,:)';
     %throw away the cells on the diaganal and cell ratio all <0.1 
     idx=(bits(:,1)<cut)&(bits(:,2)<cut)&(bits(:,3)<cut);
@@ -706,18 +568,7 @@ for i=1:12
     f9=f9(:,idx);
 %     
     valid=valid(idx);
-%     s1=s1(idx);
-%     s2=s2(idx);
-%     s3=s3(idx);
-%     s4=s4(idx);
-%     disp('try');
-%     bits=ratio(i*3-2:i*3,:)';
-%     idx=(bits(:,1)>0.2& bits(:,2)>0.2)|(bits(:,3)>0.2& bits(:,2)>0.2)|(bits(:,1)>0.2& bits(:,3)>0.2);
-%     disp(length(find(idx)));
-%     idx=~idx;
-%     ratio=ratio(:,idx);
-%    cellID=cellID(idx);
-%     fov=fov(idx);
+
 
 end
 disp(['After cropping, left ' num2str(length(ratio)) ' cells']);
@@ -753,7 +604,7 @@ close all;
 disp(['After cropping, left ' num2str(length(ratio)) ' cells']);
 
 %% match barcode to the MiSeq
-codebookPath='\\neptune\analysis\lncRNA\20180514_MiSeq_Broad\SG_codebook.xlsx';
+codebookPath='...'; %codebook path, See example files for details
 [~,~,codebook]=xlsread(codebookPath);
 Genename={codebook{:,1}};
 barcode=zeros(length(Genename),36);
@@ -850,11 +701,6 @@ f21=f2(:,idx);
 f31=f3(:,idx);
 f41=f4(:,idx);
 
-% idx2=~isnan(f91(8,:));
-% f92=f91(:,idx2);
-% valid2=valid1(idx2);
-% allname1=allname(idx2);
-
 valid2=valid1;
 clear unique;
 [unique,ic,ib]=unique(allname);
@@ -923,106 +769,7 @@ for pheno=1:4
 end
 
 save([barcodePath 'phenotype_data_optimized2.mat'],'allpheno','f12','f1','ib','allname','valid2','unique','pvalue','meanPhenotype','allblankmean');  
-%% PCA
-variance=std(f12(3:end,:)');
-f13=(f12(3:end,:)'-mean(f12(3:end,:)'))./variance;
-[coeff,score,latent,tsquared,explained]=pca(f13);
-figure;
-scatter3(score(:,1),score(:,2),score(:,3),'b.')
-axis equal
-xlabel('1st Principal Component')
-ylabel('2nd Principal Component')
-zlabel('3rd Principal Component')
-
-meanComponent=zeros(3,length(unique));
-SEMComponent=zeros(3,length(unique));
-idx=(ib>=163)' & (valid2==1);
-null=score(idx,1:3);
-blankmean=mean(null);
-pvalue=zeros(3,length(unique));
-for i=1:length(unique)
-    idx=(ib==i) & (valid2==1)';
-%     if i==100
-%         idx=ib==122;
-%     end
-%     if i>121
-%         idx=ib==i+1;
-%     end
-    for j=1:3
-        meanComponent(j,i)=mean(score(idx,j));
-        SEMComponent(j,i)=std(score(idx,j))/sqrt(length(score(idx,j)));
-        [~,pvalue(j,i)]=ttest2(score(idx,j),null(:,j));
-    end    
-end
-
-for i=1:3
-    fig = figure(...
-                    'Name', ['MALAT1 component ' num2str(i) ' distribution'], ...
-                    'visible', 'on');
-    X=1:length(unique);
-    errorbar(X,meanComponent(i,:),SEMComponent(i,:),'o');
-    set(gca,'XTick',X)
-    set(gca,'XTickLabel',unique)
-    set(gca,'XTickLabelRotation',45)
-    SaveFigure(fig, 'overwrite', true, ...
-                    'formats', {'fig', 'png'}, ...
-                    'savePath', barcodePath); 
-    fig = figure(...
-                    'Name', ['volcano plot of MALAT1 component ' num2str(i) ' '], ...
-                    'visible', 'on');
-    scatter(meanComponent(i,:)/blankmean(i),-log(pvalue(i,:)),'o');
-    hold on;
-    scatter(meanComponent(i,163:167)/blankmean(i),-log(pvalue(i,163:167)),'o');
-    SaveFigure(fig, 'overwrite', true, ...
-                    'formats', {'fig', 'png'}, ...
-                    'savePath', barcodePath); 
-end
-
-    
-    
-%%
-% for i=1:length(score(:,1))
-%  text(score(i,1),score(i,2),score(i,3),num2str(i));
-% end
-s1=score(:,1);
-s2=score(:,2);
-s3=score(:,3);
-s4=score(:,4);
-
-
-% fig = figure(...
-%                 'Name', ['MALAT1 speckle intensity distribution'], ...
-%                 'visible', 'on');
-% X=1:length(unique);
-% errorbar(X,meanSPint,SEMSPint,'o');
-% set(gca,'XTick',X)
-% set(gca,'XTickLabel',unique)
-% set(gca,'XTickLabelRotation',45)
-% SaveFigure(fig, 'overwrite', true, ...
-%                 'formats', {'fig', 'png'}, ...
-%                 'savePath', barcodePath);              
-% fig = figure(...
-%                 'Name', ['MALAT1 nucleus median Intensity distribution'], ...
-%                 'visible', 'on');
-% X=1:length(unique);
-% errorbar(X,meanmedianIN,SEMmedianIN,'o');
-% set(gca,'XTick',X)
-% set(gca,'XTickLabel',unique)
-% set(gca,'XTickLabelRotation',45)
-% SaveFigure(fig, 'overwrite', true, ...
-%                 'formats', {'fig', 'png'}, ...
-%                 'savePath', barcodePath);  
-% fig = figure(...
-%                 'Name', ['MALAT1 speckle area Intensity distribution'], ...
-%                 'visible', 'on');
-% X=1:length(unique);
-% bar(temp);
-% set(gca,'XTick',X)
-% set(gca,'XTickLabel',unique)
-% set(gca,'XTickLabelRotation',45)
-% SaveFigure(fig, 'overwrite', true, ...
-%                 'formats', {'fig', 'png'}, ...
-%                 'savePath', barcodePath);   
+ 
 %% plot certain gene phenotype
 phenotype=7;
 codebookPath='\\neptune\analysis\lncRNA\20180514_MiSeq_Broad\SG_codebook.xlsx';

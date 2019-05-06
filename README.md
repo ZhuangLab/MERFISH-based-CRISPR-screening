@@ -1,4 +1,4 @@
-# MERFISH-based_CRISPR_screening_in_mammalian_cells
+# MERFISH-based-CRISPR-screening
 
 This project contains code for image and sequence analysis for pooled CRISPR screening using MERFISH for genotype identification in individual cells as described in Imaging-based pooled CRISPR screening reveals regulators of lncRNA localization.
 
@@ -12,7 +12,7 @@ This analysis software is used for identifying FISH spots of reporter mRNA, iden
 
 ------Matlab sequence analysis------
 
-The Matlab sequence analysis for building the barcode to genetic variant lookup table is comprised of three parts in this scripts. 1. parse reads from miSeq to identify the barcode and Protospacers within the reads 2. find unique protospacer-barcode reads within the library 3. Further identify the unique reads considering sequencing errors within the unique protospacer-barcode reads to generate the final lookup table.
+The Matlab sequence analysis for building the barcode to genetic variant lookup table is comprised of three parts in this scripts. 1. Parse reads from miSeq to identify the barcode and Protospacers within the reads 2. Find unique protospacer-barcode reads within the library 3. Further identify the unique reads considering sequencing errors within the unique protospacer-barcode reads to generate the final lookup table.
 
 
 Code authors
